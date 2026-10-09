@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">PoultryAttend</string>
+    <string name="farm_title">🐔 Sri Rama Poultry Farm</string>
+    <string name="prompt_look_camera">Please look at the camera</string>
+    <string name="prompt_look_camera_te">దయచేసి కెమెరా వైపు చూడండి</string>
+    <string name="check_in_title">CHECK-IN</string>
+    <string name="check_out_title">CHECK-OUT</string>
+</resources>
