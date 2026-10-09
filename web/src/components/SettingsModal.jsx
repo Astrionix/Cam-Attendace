@@ -3,8 +3,8 @@ import { X, Database, Check, Shield, AlertTriangle } from 'lucide-react';
 import { db } from '../utils/supabase';
 
 export default function SettingsModal({ onClose, onSaved }) {
-  const [sbUrl, setSbUrl] = useState(localStorage.getItem('poultry_sb_url') || '');
-  const [sbKey, setSbKey] = useState(localStorage.getItem('poultry_sb_key') || '');
+  const [sbUrl, setSbUrl] = useState(localStorage.getItem('poultry_sb_url') || db.supabaseUrl || '');
+  const [sbKey, setSbKey] = useState(localStorage.getItem('poultry_sb_key') || db.supabaseKey || '');
   const [pin, setPin] = useState(localStorage.getItem('poultry_admin_pin') || '6999');
   const [isSaved, setIsSaved] = useState(false);
 

@@ -38,10 +38,13 @@ data class SupabaseEventPayload(
 @Serializable
 data class SupabaseEmployeeDto(
     val id: String,
-    val employee_code: String,
-    val name: String,
+    val employee_code: String? = null,
+    val emp_code: String? = null,
+    val name: String? = null,
+    val full_name: String? = null,
     val status: String = "ACTIVE",
-    val face_template: List<Float>? = null
+    val face_template: List<Float>? = null,
+    val face_template_reference: List<Float>? = null
 )
 
 @Serializable
@@ -54,7 +57,13 @@ class SupabaseManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("poultry_supabase_prefs", Context.MODE_PRIVATE)
 
     var supabaseUrl: String
-        get() = prefs.getString("supabase_url", "http://192.168.29.99:3000") ?: "http://192.168.29.99:3000"
+        get() {
+            val url = prefs.getString("supabase_url", null)
+            if (url.isNullOrBlank() || url.contains("192.168.") || url.contains("127.0.0.1")) {
+                return "https://jgukiuyocejzyhojafyk.supabase.co"
+            }
+            return url
+        }
         set(value) = prefs.edit().putString("supabase_url", value).apply()
 
     var supabaseAnonKey: String
@@ -76,11 +85,16 @@ class SupabaseManager(context: Context) {
     }
 
     private fun getUrlsToTry(): List<String> {
-        return listOf(
-            "http://127.0.0.1:3000",
-            "http://192.168.29.99:3000",
-            supabaseUrl
-        ).distinct()
+        val urls = mutableListOf<String>()
+        if (supabaseUrl.startsWith("https://")) {
+            urls.add(supabaseUrl)
+        }
+        urls.add("http://192.168.29.99:3000")
+        urls.add("http://127.0.0.1:3000")
+        if (!urls.contains(supabaseUrl)) {
+            urls.add(supabaseUrl)
+        }
+        return urls.distinct()
     }
 
     suspend fun syncAttendanceEvent(event: AttendanceEventEntity): Boolean {
@@ -137,9 +151,14 @@ class SupabaseManager(context: Context) {
         val bodyObj = buildJsonObject {
             put("id", emp.id)
             put("employee_code", emp.employeeCode)
+            put("emp_code", emp.employeeCode)
             put("name", emp.name)
+            put("full_name", emp.name)
             put("status", emp.status)
             putJsonArray("face_template") {
+                emp.faceTemplateReference.forEach { add(JsonPrimitive(it)) }
+            }
+            putJsonArray("face_template_reference") {
                 emp.faceTemplateReference.forEach { add(JsonPrimitive(it)) }
             }
         }
@@ -235,15 +254,18 @@ class SupabaseManager(context: Context) {
             // 5. BI-DIRECTIONAL PULL: Merge remote employees into Room, preserving local face templates
             val entities = remoteList.map { dto ->
                 val local = localMap[dto.id]
-                val faceTemplate = if (dto.face_template.isNullOrEmpty() && local != null && local.faceTemplateReference.isNotEmpty()) {
-                    local.faceTemplateReference
-                } else {
-                    dto.face_template ?: emptyList()
+                val code = dto.employee_code ?: dto.emp_code ?: "PF-001"
+                val empName = dto.name ?: dto.full_name ?: "Worker"
+                val faceTemplate = when {
+                    !dto.face_template.isNullOrEmpty() -> dto.face_template
+                    !dto.face_template_reference.isNullOrEmpty() -> dto.face_template_reference
+                    local != null && local.faceTemplateReference.isNotEmpty() -> local.faceTemplateReference
+                    else -> emptyList()
                 }
                 EmployeeEntity(
                     id = dto.id,
-                    employeeCode = dto.employee_code,
-                    name = dto.name,
+                    employeeCode = code,
+                    name = empName,
                     faceTemplateReference = faceTemplate,
                     status = dto.status
                 )
