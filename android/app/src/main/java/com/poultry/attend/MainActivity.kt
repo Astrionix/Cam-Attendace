@@ -131,6 +131,7 @@ class MainActivity : ComponentActivity() {
                             employees = employeeList,
                             todayRecords = todayRecords,
                             pendingSyncCount = pendingSyncCount,
+                            otaUpdateManager = app.otaUpdateManager,
                             onBackToKiosk = {
                                 kioskViewModel.loadEmployees() // Reload on return
                                 currentScreen = AppScreen.KIOSK

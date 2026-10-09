@@ -45,15 +45,18 @@ class PoultryAttendApp : Application() {
         private set
     lateinit var ttsSpeaker: TtsSpeaker
         private set
+    lateinit var otaUpdateManager: com.poultry.attend.domain.ota.OtaUpdateManager
+        private set
 
     private val applicationScope = CoroutineScope(Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Initialize local SQLite Room database & Supabase REST manager
+        // 1. Initialize local SQLite Room database, Supabase REST manager & OTA Update Manager
         database = AppDatabase.getInstance(this)
         supabaseManager = SupabaseManager(this)
+        otaUpdateManager = com.poultry.attend.domain.ota.OtaUpdateManager(this)
 
         // 2. Initialize Computer Vision & ML Pipeline (Sections 4, 5, 6, 7, 9)
         faceDetector = FaceDetectorHelper()

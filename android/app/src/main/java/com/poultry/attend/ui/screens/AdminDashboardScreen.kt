@@ -2,6 +2,7 @@ package com.poultry.attend.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.poultry.attend.data.local.AttendanceWithEmployee
 import com.poultry.attend.data.local.EmployeeEntity
+import com.poultry.attend.domain.ota.*
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -28,6 +31,7 @@ fun AdminDashboardScreen(
     employees: List<EmployeeEntity>,
     todayRecords: List<AttendanceWithEmployee>,
     pendingSyncCount: Int,
+    otaUpdateManager: OtaUpdateManager? = null,
     onBackToKiosk: () -> Unit,
     onAddEmployeeClick: () -> Unit,
     onDeactivateEmployee: (String) -> Unit,
@@ -35,7 +39,7 @@ fun AdminDashboardScreen(
     onSyncNowClick: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Today", "History", "Staff", "Settings", "Sync")
+    val tabs = listOf("Today", "History", "Staff", "Settings", "Updates", "Sync")
 
     // Stats calculations for 4-phase daily routine (Morning In, Lunch Out, Lunch In, Evening Out)
     val totalEmployees = maxOf(employees.size, todayRecords.mapNotNull { it.employee?.id }.distinct().size)
@@ -146,7 +150,8 @@ fun AdminDashboardScreen(
                         onActiveChallengeToggle = { requireActiveChallenge = it },
                         onCleanAllData = onCleanAllData
                     )
-                    4 -> DeviceSyncView(pendingCount = pendingSyncCount, onSync = onSyncNowClick)
+                    4 -> OtaUpdatesView(otaUpdateManager = otaUpdateManager)
+                    5 -> DeviceSyncView(pendingCount = pendingSyncCount, onSync = onSyncNowClick)
                 }
             }
         }
@@ -581,6 +586,330 @@ fun RoutineItemRow(title: String, timeWindow: String, action: String, accentColo
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
             )
+        }
+    }
+}
+
+@Composable
+fun OtaUpdatesView(otaUpdateManager: OtaUpdateManager?) {
+    val coroutineScope = rememberCoroutineScope()
+    var isChecking by remember { mutableStateOf(false) }
+    var checkResult by remember { mutableStateOf<UpdateCheckResult?>(null) }
+    var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
+    var repoInput by remember { mutableStateOf(otaUpdateManager?.githubRepo ?: "Astrionix/Cam-Attendace") }
+    var isEditingRepo by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (otaUpdateManager != null && checkResult == null) {
+            isChecking = true
+            checkResult = otaUpdateManager.checkForUpdates()
+            isChecking = false
+        }
+    }
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // App Version & Status Card
+        item {
+            Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFF131B2E), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                modifier = Modifier.size(44.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(24.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("PoultryAttend Kiosk", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                                Text(
+                                    text = "Installed Version: v${otaUpdateManager?.currentVersion ?: "1.0.0"} (Build ${otaUpdateManager?.currentVersionCode ?: 1})",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (otaUpdateManager != null && !isChecking) {
+                                    coroutineScope.launch {
+                                        isChecking = true
+                                        downloadState = DownloadState.Idle
+                                        checkResult = otaUpdateManager.checkForUpdates()
+                                        isChecking = false
+                                    }
+                                }
+                            },
+                            enabled = !isChecking,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            if (isChecking) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Checking...", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Check for Updates", color = Color.Black, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    HorizontalDivider(color = Color(0xFF334155))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Cloud Repository: ${otaUpdateManager?.githubRepo ?: "Astrionix/Cam-Attendace"}", fontSize = 11.sp, color = Color(0xFF64748B))
+                        Text(
+                            text = if (isEditingRepo) "Done" else "Change",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clickable {
+                                    if (isEditingRepo) {
+                                        otaUpdateManager?.githubRepo = repoInput
+                                    }
+                                    isEditingRepo = !isEditingRepo
+                                }
+                                .padding(4.dp)
+                        )
+                    }
+
+                    if (isEditingRepo) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = repoInput,
+                            onValueChange = { repoInput = it },
+                            label = { Text("GitHub Owner/Repo (e.g. Astrionix/Cam-Attendace)", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFF10B981),
+                                unfocusedBorderColor = Color(0xFF334155)
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
+        // Checking Indicator
+        if (isChecking) {
+            item {
+                Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF1E293B), modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color(0xFF38BDF8), strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Querying GitHub Releases API for latest APK build...", color = Color.White, fontSize = 13.sp)
+                    }
+                }
+            }
+        }
+
+        // Check Result Card
+        when (val res = checkResult) {
+            is UpdateCheckResult.UpToDate -> {
+                item {
+                    Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFF064E3B).copy(alpha = 0.4f), border = BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth()) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(28.dp))
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("App is Up to Date", fontWeight = FontWeight.Bold, color = Color(0xFF10B981), fontSize = 15.sp)
+                                Text("You are running the latest version (v${res.currentVersion}). Kiosk is operating normally.", color = Color(0xFFE2E8F0), fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            is UpdateCheckResult.UpdateAvailable -> {
+                val info = res.updateInfo
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color(0xFF0F2642),
+                        border = BorderStroke(1.5.dp, Color(0xFF06B6D4)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(18.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(24.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("New Update Available!", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 16.sp)
+                                }
+                                Surface(shape = RoundedCornerShape(6.dp), color = Color(0xFF06B6D4).copy(alpha = 0.2f)) {
+                                    Text(
+                                        text = "v${info.versionName}",
+                                        color = Color(0xFF38BDF8),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(text = info.releaseTitle, fontWeight = FontWeight.Bold, color = Color(0xFFF8FAFC), fontSize = 14.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(text = "Release Notes: ${info.releaseNotes}", color = Color(0xFF94A3B8), fontSize = 12.sp)
+
+                            if (info.apkSize > 0) {
+                                val sizeMb = String.format("%.1f", info.apkSize / (1024f * 1024f))
+                                Text(text = "File: ${info.assetName} • $sizeMb MB", color = Color(0xFF64748B), fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            when (val state = downloadState) {
+                                is DownloadState.Idle -> {
+                                    Button(
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                try {
+                                                    downloadState = DownloadState.Downloading(0f, 0L, info.apkSize)
+                                                    val apkFile = otaUpdateManager?.downloadApk(info.downloadUrl) { progress, downloaded, total ->
+                                                        downloadState = DownloadState.Downloading(progress, downloaded, total)
+                                                    }
+                                                    if (apkFile != null && apkFile.exists()) {
+                                                        downloadState = DownloadState.Downloaded(apkFile)
+                                                        otaUpdateManager.installApk(apkFile)
+                                                    } else {
+                                                        downloadState = DownloadState.Failed("Downloaded file not found")
+                                                    }
+                                                } catch (e: Exception) {
+                                                    downloadState = DownloadState.Failed(e.localizedMessage ?: "Download failed")
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, tint = Color.Black)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Download & Install Update", color = Color.Black, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                is DownloadState.Downloading -> {
+                                    Column(modifier = Modifier.fillMaxWidth()) {
+                                        LinearProgressIndicator(
+                                            progress = { state.progress },
+                                            color = Color(0xFF10B981),
+                                            trackColor = Color(0xFF334155),
+                                            modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val downloadedMb = String.format("%.1f", state.downloadedBytes / (1024f * 1024f))
+                                        val totalMb = if (state.totalBytes > 0) String.format("%.1f", state.totalBytes / (1024f * 1024f)) else "--"
+                                        Text(
+                                            text = "Downloading APK: ${(state.progress * 100).toInt()}% ($downloadedMb MB / $totalMb MB)",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF38BDF8)
+                                        )
+                                    }
+                                }
+
+                                is DownloadState.Downloaded -> {
+                                    Button(
+                                        onClick = {
+                                            otaUpdateManager?.installApk(state.apkFile)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF06B6D4)),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = Color.Black)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Update Downloaded! Tap to Install", color = Color.Black, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                is DownloadState.Failed -> {
+                                    Column {
+                                        Text("Error: ${state.error}", color = Color(0xFFEF4444), fontSize = 12.sp)
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Button(
+                                            onClick = { downloadState = DownloadState.Idle },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Text("Retry Download", color = Color.White)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            is UpdateCheckResult.Error -> {
+                item {
+                    Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFF2E1C1A), border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)), modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(22.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Update Server Notice", fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B), fontSize = 14.sp)
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(text = res.message, color = Color(0xFFE2E8F0), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            null -> {}
+        }
+
+        // Guide on How OTA Updates Work
+        item {
+            Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFF131B2E), modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("How to Push an OTA Update (Step-by-Step):", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "1. Build the APK using '.\\Build-APK.bat' on your computer.\n" +
+                               "2. Go to your GitHub repository: github.com/Astrionix/Cam-Attendace\n" +
+                               "3. Click 'Releases' → 'Draft a new release'.\n" +
+                               "4. Set Tag to next version e.g. 'v1.0.1' and upload the built APK file.\n" +
+                               "5. Click 'Publish release'.\n" +
+                               "6. This kiosk terminal will automatically detect the new release and let you update Over-The-Air with 1 tap!",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        lineHeight = 18.sp
+                    )
+                }
+            }
         }
     }
 }
