@@ -74,6 +74,11 @@ export default function App() {
     await refreshData();
   };
 
+  const handleUpdateEmployeeWage = async (id, wage) => {
+    await db.updateEmployeeWage(id, wage);
+    await refreshData();
+  };
+
   return (
     <div>
       {/* MODE 1: ATTENDANCE KIOSK */}
@@ -94,10 +99,13 @@ export default function App() {
           attendance={attendance}
           allAttendance={allAttendance}
           onRefresh={refreshData}
+          onRecordPunch={handleRecordPunch}
           onBackToKiosk={() => setCurrentMode('kiosk')}
           onOpenSettings={() => setShowSettingsModal(true)}
           onCleanDemoData={handleCleanDemoData}
           onDeleteEmployee={handleDeleteEmployee}
+          onAddEmployee={handleSaveEmployee}
+          onUpdateWage={handleUpdateEmployeeWage}
           isOnline={isOnline}
           pendingCount={pendingCount}
         />

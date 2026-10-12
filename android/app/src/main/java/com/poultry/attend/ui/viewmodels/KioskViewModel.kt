@@ -42,7 +42,13 @@ sealed class KioskUiState {
     ) : KioskUiState()
     data class AlreadyCompleted(val name: String, val completedTime: String = "") : KioskUiState()
     data class InfoNotice(val message: String, val telugu: String) : KioskUiState()
-    data class Cooldown(val name: String, val remainingSeconds: Int) : KioskUiState()
+    data class Cooldown(
+        val name: String,
+        val remainingSeconds: Int,
+        val remainingMinutes: Int = (remainingSeconds + 59) / 60,
+        val lastTime: String = "",
+        val lastType: PunchType = PunchType.ENTRY
+    ) : KioskUiState()
     data class Unknown(val message: String = "FACE NOT RECOGNIZED") : KioskUiState()
 }
 
@@ -236,8 +242,17 @@ class KioskViewModel(
             }
 
             is DecisionResult.CooldownActive -> {
-                _uiState.value = KioskUiState.Cooldown(decision.employee.name, decision.remainingSeconds)
-                triggerDismissAfter(1500)
+                isPopupActive = true
+                val remainingMins = (decision.remainingSeconds + 59) / 60
+                _uiState.value = KioskUiState.Cooldown(
+                    name = decision.employee.name,
+                    remainingSeconds = decision.remainingSeconds,
+                    remainingMinutes = remainingMins,
+                    lastTime = decision.recordedTime,
+                    lastType = decision.punchType
+                )
+                ttsSpeaker.speakCooldown(decision.employee.name, remainingMins)
+                triggerDismissAfter(2800)
             }
 
             is DecisionResult.Rejected -> {

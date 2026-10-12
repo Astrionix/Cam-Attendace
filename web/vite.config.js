@@ -72,6 +72,8 @@ function syncApiPlugin() {
                   full_name: name,
                   role: emp.role || 'Farm Staff',
                   department: emp.department || 'Farm Operations',
+                  daily_wage: Number(emp.daily_wage) || 500,
+                  shed_name: emp.shed_name || 'Broiler Shed #1',
                   status: emp.status || 'ACTIVE',
                   is_active: emp.status !== 'INACTIVE',
                   face_template: emp.face_template || emp.face_template_reference || [],
@@ -92,6 +94,31 @@ function syncApiPlugin() {
             }
             res.statusCode = 400
             res.end(JSON.stringify({ error: 'Invalid employee payload' }))
+          })
+          return
+        }
+
+        // 2b. EMPLOYEES: UPDATE WAGE (Admin set/change daily salary pay)
+        if (url.pathname === '/api/employees/update-wage' && req.method === 'POST') {
+          let body = ''
+          req.on('data', chunk => { body += chunk })
+          req.on('end', () => {
+            try {
+              const { id, daily_wage } = JSON.parse(body || '{}')
+              const db = readDb()
+              const emp = (db.employees || []).find(e => e.id === id || e.employee_code === id || e.emp_code === id)
+              if (emp) {
+                emp.daily_wage = Number(daily_wage) || 0
+                writeDb(db)
+                res.setHeader('Content-Type', 'application/json')
+                res.end(JSON.stringify({ success: true, employee: emp }))
+                return
+              }
+            } catch (err) {
+              console.error(err)
+            }
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'Failed to update wage' }))
           })
           return
         }

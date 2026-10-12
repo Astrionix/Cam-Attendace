@@ -3,11 +3,10 @@ package com.poultry.attend.domain.attendance
 import java.util.Calendar
 
 /**
- * Poultry Farm Daily Work Routine:
- * 1. Morning Enter (Shift Start): Until 12:00 PM -> MORNING IN
- * 2. After 12:00 PM Lunch Break: 12:00 PM - 01:00 PM -> LUNCH OUT
- * 3. Again After 1:00 PM Return: 01:00 PM - 05:00 PM -> LUNCH IN (Afternoon Entry)
- * 4. From 5:00 PM Onwards: 05:00 PM+ -> EVENING OUT (Day Complete)
+ * Poultry Farm Gate Attendance Routine:
+ * - Dynamic Multi-Punch (ENTRY & EXIT) throughout the day
+ * - Strict 10-Minute Cooldown Buffer between punches to prevent duplicate scans
+ * - Allows workers to go out on permissions, field work, lunch breaks, and re-enter freely
  */
 enum class PunchType(
     val eventCode: String,
@@ -16,33 +15,48 @@ enum class PunchType(
     val iconEmoji: String,
     val badgeColorHex: Long
 ) {
-    MORNING_IN(
+    ENTRY(
         eventCode = "CHECK_IN",
-        title = "ENTRY (MORNING)",
-        teluguTitle = "ఉదయం ఎంట్రీ",
-        iconEmoji = "🌅",
+        title = "ENTRY (IN)",
+        teluguTitle = "ఎంట్రీ (లోపలికి)",
+        iconEmoji = "🟢",
         badgeColorHex = 0xFF10B981 // Emerald
     ),
-    LUNCH_OUT(
-        eventCode = "LUNCH_OUT",
-        title = "HALF-DAY EXIT",
-        teluguTitle = "హాఫ్ డే ఎగ్జిట్ (విరామం)",
-        iconEmoji = "🚪",
+    EXIT(
+        eventCode = "CHECK_OUT",
+        title = "EXIT (OUT)",
+        teluguTitle = "ఎగ్జిట్ (బయటకు)",
+        iconEmoji = "🔴",
         badgeColorHex = 0xFFF59E0B // Amber
     ),
+    // Backward compatibility aliases
+    MORNING_IN(
+        eventCode = "CHECK_IN",
+        title = "ENTRY (IN)",
+        teluguTitle = "ఎంట్రీ (లోపలికి)",
+        iconEmoji = "🟢",
+        badgeColorHex = 0xFF10B981
+    ),
+    LUNCH_OUT(
+        eventCode = "CHECK_OUT",
+        title = "EXIT (OUT)",
+        teluguTitle = "ఎగ్జిట్ (బయటకు)",
+        iconEmoji = "🔴",
+        badgeColorHex = 0xFFF59E0B
+    ),
     LUNCH_IN(
-        eventCode = "LUNCH_IN",
-        title = "FARM RE-ENTRY",
-        teluguTitle = "ఫామ్ రీ-ఎంట్రీ",
-        iconEmoji = "🚶‍♂️",
-        badgeColorHex = 0xFF0EA5E9 // Cyan / Sky
+        eventCode = "CHECK_IN",
+        title = "ENTRY (IN)",
+        teluguTitle = "ఎంట్రీ (లోపలికి)",
+        iconEmoji = "🟢",
+        badgeColorHex = 0xFF10B981
     ),
     EVENING_OUT(
         eventCode = "CHECK_OUT",
-        title = "EVENING EXIT",
-        teluguTitle = "సాయంత్రం ఎగ్జిట్ (పని పూర్తయింది)",
-        iconEmoji = "🏠",
-        badgeColorHex = 0xFF8B5CF6 // Purple
+        title = "EXIT (OUT)",
+        teluguTitle = "ఎగ్జిట్ (బయటకు)",
+        iconEmoji = "🔴",
+        badgeColorHex = 0xFF8B5CF6
     )
 }
 
@@ -52,29 +66,23 @@ enum class RoutinePhase(
     val timeRange: String,
     val emoji: String
 ) {
-    MORNING_ENTRY(
-        title = "Morning Entry",
-        telugu = "మార్నింగ్ ఎంట్రీ",
+    MORNING_SHIFT(
+        title = "Morning Shift",
+        telugu = "మార్నింగ్ షిఫ్ట్",
         timeRange = "Morning – 12:00 PM",
         emoji = "🌅"
     ),
-    LUNCH_OUT(
-        title = "Lunch Break",
-        telugu = "భోజన విరామం",
-        timeRange = "12:00 PM – 01:00 PM",
-        emoji = "🍽️"
+    AFTERNOON_SHIFT(
+        title = "Afternoon Shift",
+        telugu = "మధ్యాహ్నం షిఫ్ట్",
+        timeRange = "12:00 PM – 05:00 PM",
+        emoji = "☀️"
     ),
-    AFTERNOON_ENTRY(
-        title = "Afternoon Entry",
-        telugu = "మధ్యాహ్నం ఎంట్రీ",
-        timeRange = "01:00 PM – 05:00 PM",
-        emoji = "🥪"
-    ),
-    EVENING_EXIT(
-        title = "Evening Exit",
-        telugu = "పని ముగింపు",
+    EVENING_SHIFT(
+        title = "Evening Shift",
+        telugu = "సాయంత్రం షిఫ్ట్",
         timeRange = "05:00 PM Onwards",
-        emoji = "🏠"
+        emoji = "🌙"
     )
 }
 
@@ -82,10 +90,9 @@ object FarmRoutine {
     fun getCurrentPhase(calendar: Calendar = Calendar.getInstance()): RoutinePhase {
         val hour = calendar.get(Calendar.HOUR_OF_DAY)
         return when {
-            hour < 12 -> RoutinePhase.MORNING_ENTRY
-            hour == 12 -> RoutinePhase.LUNCH_OUT
-            hour in 13..16 -> RoutinePhase.AFTERNOON_ENTRY
-            else -> RoutinePhase.EVENING_EXIT
+            hour < 12 -> RoutinePhase.MORNING_SHIFT
+            hour in 12..16 -> RoutinePhase.AFTERNOON_SHIFT
+            else -> RoutinePhase.EVENING_SHIFT
         }
     }
 }

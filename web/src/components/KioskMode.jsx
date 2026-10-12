@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Camera, ShieldCheck, CheckCircle2, Clock, MapPin, AlertCircle, Lock, RefreshCw, Sparkles, Cpu, Eye } from 'lucide-react';
-import { playChime, speakGreeting } from '../utils/audio';
+import { playChime, speakGreeting, speakCooldown } from '../utils/audio';
 
 export default function KioskMode({
   employees = [],
@@ -79,7 +79,7 @@ export default function KioskMode({
     if (cooldownMessage) {
       const timer = setTimeout(() => {
         setCooldownMessage(null);
-      }, 3000);
+      }, 3500);
       return () => clearTimeout(timer);
     }
   }, [cooldownMessage]);
@@ -99,7 +99,17 @@ export default function KioskMode({
       playChime(isCheckIn);
       speakGreeting(employee.full_name, isCheckIn);
     } catch (e) {
-      console.error(e);
+      if (e?.isCooldown) {
+        setCooldownMessage({
+          employee,
+          remainingMinutes: e.remainingMinutes,
+          remainingSeconds: e.remainingSeconds,
+          lastPunch: e.lastPunch
+        });
+        speakCooldown(employee.full_name, e.remainingMinutes);
+      } else {
+        console.error(e);
+      }
     }
   };
 
@@ -456,6 +466,79 @@ export default function KioskMode({
             }}>
               <RefreshCw size={12} className="spin" />
               <span>Returning to kiosk scanner in 3s...</span>
+            </div>
+          </div>
+        )}
+
+        {/* COOLDOWN ACTIVE MODAL OVERLAY */}
+        {cooldownMessage && (
+          <div style={{
+            position: 'absolute',
+            inset: '16px',
+            background: 'rgba(3, 7, 18, 0.96)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderRadius: '24px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '2rem',
+            textAlign: 'center',
+            border: '2px solid var(--accent-amber)',
+            boxShadow: '0 0 50px rgba(245, 158, 11, 0.35)',
+            animation: 'fadeIn 0.25s ease-out',
+            zIndex: 10
+          }}>
+            <div style={{
+              width: '76px',
+              height: '76px',
+              borderRadius: '50%',
+              background: 'rgba(245, 158, 11, 0.18)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '1rem',
+              border: '2px solid var(--accent-amber)'
+            }}>
+              <Clock size={46} color="var(--accent-amber)" />
+            </div>
+
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 900, color: '#fff', marginBottom: '0.4rem' }}>
+              ✓ {cooldownMessage.employee.full_name}
+            </h3>
+
+            <div style={{
+              background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+              color: '#000',
+              fontWeight: 900,
+              fontSize: '1rem',
+              padding: '0.4rem 1.4rem',
+              borderRadius: '10px',
+              letterSpacing: '0.04em',
+              marginBottom: '0.75rem'
+            }}>
+              ⏱️ 10-MIN COOLDOWN ACTIVE
+            </div>
+
+            <p style={{ fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc' }}>
+              Already Punched at {cooldownMessage.lastPunch?.punch_time}
+            </p>
+
+            <p style={{ fontSize: '0.9rem', color: '#f59e0b', marginTop: '0.4rem', fontWeight: 700 }}>
+              దయచేసి ఇంకా {cooldownMessage.remainingMinutes} నిమిషాలు వేచి ఉండండి
+            </p>
+
+            <div style={{
+              marginTop: '1.25rem',
+              fontSize: '0.75rem',
+              color: 'var(--text-muted)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}>
+              <RefreshCw size={12} className="spin" />
+              <span>Returning in 3s...</span>
             </div>
           </div>
         )}

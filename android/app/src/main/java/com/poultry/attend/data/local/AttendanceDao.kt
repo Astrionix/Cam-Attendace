@@ -32,11 +32,20 @@ interface AttendanceDao {
     @Query("SELECT * FROM attendance WHERE attendanceDate >= :startDate AND attendanceDate <= :endDate ORDER BY attendanceDate DESC, updatedAt DESC")
     suspend fun getHistoryWithEmployee(startDate: String, endDate: String): List<AttendanceWithEmployee>
 
+    @Query("SELECT * FROM attendance ORDER BY attendanceDate DESC")
+    fun getAllAttendanceFlow(): Flow<List<AttendanceEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdateAttendance(attendance: AttendanceEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvent(event: AttendanceEventEntity)
+
+    @Query("SELECT * FROM attendance_events WHERE employeeId = :employeeId ORDER BY eventTimestamp DESC LIMIT 1")
+    suspend fun getLatestEvent(employeeId: String): AttendanceEventEntity?
+
+    @Query("SELECT * FROM attendance_events WHERE employeeId = :employeeId AND eventTimestamp >= :startOfDay ORDER BY eventTimestamp DESC LIMIT 1")
+    suspend fun getLatestEventToday(employeeId: String, startOfDay: Long): AttendanceEventEntity?
 
     @Query("SELECT * FROM attendance_events WHERE syncStatus = 'PENDING' ORDER BY eventTimestamp ASC")
     suspend fun getPendingEvents(): List<AttendanceEventEntity>

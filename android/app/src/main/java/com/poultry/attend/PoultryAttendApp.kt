@@ -67,7 +67,7 @@ class PoultryAttendApp : Application() {
         recognitionEngine = FaceRecognitionEngine(config = ThresholdConfig(matchThreshold = 0.62f, ambiguityMargin = 0.03f))
 
         // 3. Initialize Decision Engine & Registration Manager (Sections 8, 12)
-        attendanceDecisionEngine = AttendanceDecisionEngine(database = database, cooldownSeconds = 45)
+        attendanceDecisionEngine = AttendanceDecisionEngine(database = database, cooldownSeconds = 600) // 10 minutes limit
         registrationManager = RegistrationManager(
             database = database,
             faceDetector = faceDetector,

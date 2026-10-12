@@ -66,7 +66,7 @@ fun KioskScreen(
         is KioskUiState.QualityWarning -> uiState.message.uppercase()
         is KioskUiState.LivenessChallenge -> uiState.prompt.uppercase()
         is KioskUiState.Unknown -> "FACE NOT RECOGNIZED"
-        is KioskUiState.Cooldown -> "ATTENDANCE RECORDED"
+        is KioskUiState.Cooldown -> "⏱️ 10-MIN COOLDOWN ACTIVE (${uiState.remainingMinutes}M WAIT)"
         is KioskUiState.InfoNotice -> uiState.message.uppercase()
         is KioskUiState.AlreadyDone -> "${uiState.punchType.title} ALREADY DONE"
         is KioskUiState.AlreadyCompleted -> "ALL SHIFTS COMPLETED TODAY"
@@ -189,7 +189,7 @@ fun KioskScreen(
 
                 // CONFIRMATION OVERLAY (Section 14 & 23)
                 androidx.compose.animation.AnimatedVisibility(
-                    visible = (uiState is KioskUiState.PunchSuccess || uiState is KioskUiState.AlreadyDone || uiState is KioskUiState.AlreadyCompleted),
+                    visible = (uiState is KioskUiState.PunchSuccess || uiState is KioskUiState.Cooldown || uiState is KioskUiState.AlreadyDone || uiState is KioskUiState.AlreadyCompleted),
                     enter = fadeIn() + scaleIn(initialScale = 0.9f),
                     exit = fadeOut()
                 ) {
@@ -247,6 +247,73 @@ fun KioskScreen(
                                         color = Color(0xFF94A3B8),
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
+                        is KioskUiState.Cooldown -> {
+                            val cooldown = uiState
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = Color(0xFF0F172A).copy(alpha = 0.98f),
+                                shadowElevation = 24.dp,
+                                border = BorderStroke(1.5.dp, Color(0xFFF59E0B)),
+                                modifier = Modifier.fillMaxWidth(0.92f).padding(16.dp)
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(56.dp)
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    Text(
+                                        text = "✓ ${cooldown.name.uppercase()}",
+                                        fontSize = 22.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White,
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFB45309)
+                                    ) {
+                                        Text(
+                                            text = "⏱️ 10-MIN COOLDOWN ACTIVE (${cooldown.remainingMinutes}M LEFT)",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 13.sp,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    Text(
+                                        text = "${cooldown.lastType.title} recorded at ${cooldown.lastTime}",
+                                        color = Color(0xFFCBD5E1),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+
+                                    Spacer(modifier = Modifier.height(4.dp))
+
+                                    Text(
+                                        text = "పంచ్ ఇప్పటికే నమోదయింది! మళ్లీ పంచ్ చేయడానికి ${cooldown.remainingMinutes} నిమిషాలు వేచి ఉండండి",
+                                        color = Color(0xFFFBBF24),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center
                                     )
                                 }
                             }
@@ -412,6 +479,7 @@ fun KioskScreen(
                             isError -> "దయచేసి మళ్లీ ప్రయత్నించండి"
                             isChallenge -> "దయచేసి సూచనలను పాటించండి"
                             uiState is KioskUiState.Detecting -> "ముఖాన్ని గుర్తిస్తోంది..."
+                            uiState is KioskUiState.Cooldown -> "పంచ్ ఇప్పటికే పూర్తయింది (10 నిమిషాల వ్యవధి)"
                             uiState is KioskUiState.InfoNotice -> uiState.telugu
                             uiState is KioskUiState.AlreadyDone -> uiState.telugu
                             uiState is KioskUiState.PunchSuccess -> "${uiState.punchType.teluguTitle} నమోదయింది"
@@ -460,7 +528,7 @@ fun KioskScreen(
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
                         Text(
-                            text = "${currentPhase.emoji} ${currentPhase.title} • ${currentPhase.timeRange}",
+                            text = "⏱️ 10-Min Cooldown Protection • Multi-Punch Terminal",
                             color = Color(0xFF94A3B8),
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,

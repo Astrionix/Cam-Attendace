@@ -118,7 +118,8 @@ export class PoultryDatabase {
             ...emp,
             emp_code: emp.emp_code || emp.employee_code,
             full_name: emp.full_name || emp.name,
-            name: emp.name || emp.full_name
+            name: emp.name || emp.full_name,
+            daily_wage: Number(emp.daily_wage) || 500
           }));
           localStorage.setItem('poultry_employees', JSON.stringify(normalized));
           return normalized;
@@ -129,7 +130,11 @@ export class PoultryDatabase {
     }
 
     const local = localStorage.getItem('poultry_employees');
-    return local ? JSON.parse(local) : DEFAULT_EMPLOYEES;
+    const parsed = local ? JSON.parse(local) : DEFAULT_EMPLOYEES;
+    return parsed.map(emp => ({
+      ...emp,
+      daily_wage: Number(emp.daily_wage) || 500
+    }));
   }
 
   async addEmployee(employee) {
@@ -147,6 +152,7 @@ export class PoultryDatabase {
       department: employee.department || 'Farm Operations',
       shed_name: employee.shed_name || 'Broiler Shed #1',
       shift_name: employee.shift_name || 'Morning Shift',
+      daily_wage: Number(employee.daily_wage) || 500,
       status: employee.status || 'ACTIVE',
       face_template: employee.face_template || employee.face_template_reference || [],
       face_template_reference: employee.face_template_reference || employee.face_template || [],
@@ -184,6 +190,42 @@ export class PoultryDatabase {
     localStorage.setItem('poultry_employees', JSON.stringify(updated));
 
     return formatted;
+  }
+
+  async updateEmployeeWage(id, wage) {
+    const numericWage = Number(wage) || 0;
+
+    // 1. Try local dev mock API
+    try {
+      await fetch('/api/employees/update-wage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, daily_wage: numericWage })
+      });
+    } catch (e) {}
+
+    // 2. Direct Supabase Cloud Update
+    if (this.client) {
+      try {
+        await this.client
+          .from('employees')
+          .update({ daily_wage: numericWage })
+          .or(`id.eq.${id},employee_code.eq.${id},emp_code.eq.${id}`);
+      } catch (e) {
+        console.warn('Supabase updateEmployeeWage error:', e);
+      }
+    }
+
+    // 3. Update localStorage
+    const local = JSON.parse(localStorage.getItem('poultry_employees') || '[]');
+    const updated = local.map(e => {
+      if (e.id === id || e.employee_code === id || e.emp_code === id) {
+        return { ...e, daily_wage: numericWage };
+      }
+      return e;
+    });
+    localStorage.setItem('poultry_employees', JSON.stringify(updated));
+    return true;
   }
 
   async deleteEmployee(id) {
@@ -272,6 +314,24 @@ export class PoultryDatabase {
 
     // Smart auto punch type logic:
     const lastPunch = todayEmployeePunches[0] || todayEmployeePunches[todayEmployeePunches.length - 1];
+
+    // 10-Minute Cooldown Protection (600,000 ms = 10 minutes)
+    if (lastPunch) {
+      const lastTs = new Date(lastPunch.timestamp).getTime();
+      const elapsedMs = now.getTime() - lastTs;
+      const cooldownMs = 10 * 60 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const remainingSec = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        const remainingMin = Math.ceil(remainingSec / 60);
+        const err = new Error(`10-Minute Cooldown Active. Next punch allowed in ${remainingMin} min.`);
+        err.isCooldown = true;
+        err.remainingSeconds = remainingSec;
+        err.remainingMinutes = remainingMin;
+        err.lastPunch = lastPunch;
+        throw err;
+      }
+    }
+
     let resolvedType = type;
     if (!resolvedType) {
       if (!lastPunch) {

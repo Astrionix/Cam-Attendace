@@ -8,6 +8,7 @@
       "full_name": "sai",
       "role": "Farm Staff",
       "department": "Farm Operations",
+      "daily_wage": 700,
       "status": "ACTIVE",
       "is_active": true,
       "face_template": [
@@ -408,6 +409,7 @@
       "full_name": "chan",
       "role": "Farm Staff",
       "department": "Farm Operations",
+      "daily_wage": 600,
       "status": "ACTIVE",
       "is_active": true,
       "face_template": [
@@ -802,6 +804,25 @@
     }
   ],
   "attendance": [
+    {
+      "id": "att-1791825815875-m5ye3",
+      "employee_id": "8c9a1bad-c4ca-46fa-87eb-16f179174622",
+      "employee_name": "sai",
+      "emp_code": "2",
+      "type": "CHECK_IN",
+      "event_type": "CHECK_IN",
+      "punch_date": "2026-10-12",
+      "attendance_date": "2026-10-12",
+      "punch_time": "10:53:35 PM",
+      "timestamp": "2026-10-12T17:23:35.874Z",
+      "event_timestamp": 1791825815874,
+      "status": "LATE",
+      "sync_status": "SYNCED",
+      "recognition_score": 0.92,
+      "confidence_score": 0.92,
+      "liveness_result": "PASSED",
+      "device_id": "Web-Dashboard"
+    },
     {
       "id": "8f25e492-ca6e-4c75-9dbc-031d6c620d05",
       "employee_id": "b33c10d2-194f-4f58-b113-eae29d8722ec",

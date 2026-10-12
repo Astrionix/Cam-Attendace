@@ -1,5 +1,6 @@
 package com.poultry.attend.ui.screens
 
+import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -8,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -16,9 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.poultry.attend.data.local.AttendanceEntity
 import com.poultry.attend.data.local.AttendanceWithEmployee
 import com.poultry.attend.data.local.EmployeeEntity
 import com.poultry.attend.domain.ota.*
@@ -30,6 +36,7 @@ import java.util.*
 fun AdminDashboardScreen(
     employees: List<EmployeeEntity>,
     todayRecords: List<AttendanceWithEmployee>,
+    allAttendance: List<AttendanceEntity> = emptyList(),
     pendingSyncCount: Int,
     otaUpdateManager: OtaUpdateManager? = null,
     onBackToKiosk: () -> Unit,
@@ -39,18 +46,18 @@ fun AdminDashboardScreen(
     onSyncNowClick: () -> Unit
 ) {
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Today", "History", "Staff", "Settings", "Updates", "Sync")
+    val tabs = listOf("Today", "History", "Staff", "Salary Pay", "Settings", "Updates", "Sync")
 
-    // Stats calculations for 4-phase daily routine (Morning In, Lunch Out, Lunch In, Evening Out)
+    val context = LocalContext.current
+    val wagePrefs = remember { context.getSharedPreferences("poultry_wages", Context.MODE_PRIVATE) }
+    var editingWageEmployee by remember { mutableStateOf<EmployeeEntity?>(null) }
+    var wageRefreshKey by remember { mutableStateOf(0) }
+
+    // Stats calculations for flexible multi-punch system (Entry & Exit with 10-min buffer)
     val totalEmployees = maxOf(employees.size, todayRecords.mapNotNull { it.employee?.id }.distinct().size)
     val presentCount = todayRecords.filter { it.attendance.checkIn != null }.size
-    val checkedOutCount = todayRecords.filter { it.attendance.checkOut != null }.size
-    val onLunchCount = todayRecords.filter {
-        it.attendance.lunchOut != null && it.attendance.lunchIn == null && it.attendance.checkOut == null
-    }.size
-    val currentlyWorking = todayRecords.filter {
-        it.attendance.checkIn != null && it.attendance.checkOut == null && (it.attendance.lunchOut == null || it.attendance.lunchIn != null)
-    }.size
+    val currentlyWorking = todayRecords.filter { it.attendance.status == "WORKING" }.size
+    val currentlyOut = todayRecords.filter { it.attendance.status == "EXITED" }.size
     val absentCount = (totalEmployees - presentCount).coerceAtLeast(0)
 
     val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
@@ -59,6 +66,21 @@ fun AdminDashboardScreen(
     var matchThreshold by remember { mutableStateOf(0.62f) }
     var ambiguityMargin by remember { mutableStateOf(0.03f) }
     var requireActiveChallenge by remember { mutableStateOf(false) }
+
+    // Edit Wage Dialog Modal
+    editingWageEmployee?.let { emp ->
+        val currentWage = wagePrefs.getInt("wage_${emp.id}", 500)
+        EditDailyWageDialog(
+            employee = emp,
+            currentWage = currentWage,
+            onDismiss = { editingWageEmployee = null },
+            onSave = { newWage ->
+                wagePrefs.edit().putInt("wage_${emp.id}", newWage).apply()
+                wageRefreshKey++
+                editingWageEmployee = null
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -98,7 +120,7 @@ fun AdminDashboardScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // KPI Summary Row (Routine status: TOTAL, PRESENT, WORKING, LUNCH, DONE)
+            // KPI Summary Row (TOTAL, PRESENT, IN, OUT, ABSENT)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -107,9 +129,9 @@ fun AdminDashboardScreen(
             ) {
                 MetricBox(title = "TOTAL", count = "$totalEmployees", color = Color(0xFF38BDF8), modifier = Modifier.weight(1f))
                 MetricBox(title = "PRESENT", count = "$presentCount", color = Color(0xFF10B981), modifier = Modifier.weight(1f))
-                MetricBox(title = "WORKING", count = "$currentlyWorking", color = Color(0xFF34D399), modifier = Modifier.weight(1f))
-                MetricBox(title = "LUNCH", count = "$onLunchCount", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
-                MetricBox(title = "DONE", count = "$checkedOutCount", color = Color(0xFFA78BFA), modifier = Modifier.weight(1f))
+                MetricBox(title = "IN (FARM)", count = "$currentlyWorking", color = Color(0xFF34D399), modifier = Modifier.weight(1f))
+                MetricBox(title = "OUT (EXIT)", count = "$currentlyOut", color = Color(0xFFF59E0B), modifier = Modifier.weight(1f))
+                MetricBox(title = "ABSENT", count = "$absentCount", color = Color(0xFFEF4444), modifier = Modifier.weight(1f))
             }
 
             // Tab Navigation
@@ -140,8 +162,20 @@ fun AdminDashboardScreen(
                 when (selectedTab) {
                     0 -> TodaySummaryView(records = todayRecords, timeFormat = timeFormat)
                     1 -> HistoryView(records = todayRecords, timeFormat = timeFormat)
-                    2 -> EmployeeListView(employees = employees, onDeactivate = onDeactivateEmployee)
-                    3 -> CalibrationSecurityView(
+                    2 -> EmployeeListView(
+                        employees = employees,
+                        onDeactivate = onDeactivateEmployee,
+                        onEditWage = { emp -> editingWageEmployee = emp },
+                        refreshKey = wageRefreshKey
+                    )
+                    3 -> SalaryPayrollView(
+                        employees = employees,
+                        todayRecords = todayRecords,
+                        allAttendance = allAttendance,
+                        onEditWage = { emp -> editingWageEmployee = emp },
+                        refreshKey = wageRefreshKey
+                    )
+                    4 -> CalibrationSecurityView(
                         threshold = matchThreshold,
                         onThresholdChange = { matchThreshold = it },
                         ambiguity = ambiguityMargin,
@@ -150,8 +184,8 @@ fun AdminDashboardScreen(
                         onActiveChallengeToggle = { requireActiveChallenge = it },
                         onCleanAllData = onCleanAllData
                     )
-                    4 -> OtaUpdatesView(otaUpdateManager = otaUpdateManager)
-                    5 -> DeviceSyncView(pendingCount = pendingSyncCount, onSync = onSyncNowClick)
+                    5 -> OtaUpdatesView(otaUpdateManager = otaUpdateManager)
+                    6 -> DeviceSyncView(pendingCount = pendingSyncCount, onSync = onSyncNowClick)
                 }
             }
         }
@@ -184,26 +218,23 @@ fun TodaySummaryView(records: List<AttendanceWithEmployee>, timeFormat: SimpleDa
                 val lunchInTime = att.lunchIn?.let { timeFormat.format(Date(it)) }
                 val outTime = att.checkOut?.let { timeFormat.format(Date(it)) }
 
-                val isDone = att.checkOut != null
-                val isOnLunch = att.lunchOut != null && att.lunchIn == null && !isDone
-                val isWorking = att.checkIn != null && !isDone && !isOnLunch
+                val isWorking = att.status == "WORKING"
+                val isExited = att.status == "EXITED"
 
                 val statusLabel = when {
-                    isDone -> "DONE (OUT)"
-                    isOnLunch -> "AT LUNCH"
-                    isWorking -> "WORKING"
+                    isWorking -> "IN (WORKING)"
+                    isExited -> "OUT (EXITED)"
+                    att.checkIn != null -> "PRESENT"
                     else -> "PENDING"
                 }
                 val statusColor = when {
-                    isDone -> Color(0xFFA78BFA)
-                    isOnLunch -> Color(0xFFFBBF24)
                     isWorking -> Color(0xFF34D399)
+                    isExited -> Color(0xFFFBBF24)
                     else -> Color(0xFF94A3B8)
                 }
                 val statusBg = when {
-                    isDone -> Color(0xFF2E1065)
-                    isOnLunch -> Color(0xFF78350F)
                     isWorking -> Color(0xFF064E3B)
+                    isExited -> Color(0xFF78350F)
                     else -> Color(0xFF1E293B)
                 }
 
@@ -213,12 +244,8 @@ fun TodaySummaryView(records: List<AttendanceWithEmployee>, timeFormat: SimpleDa
                             Text(emp?.name ?: "Unknown", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
                             val punchDetails = buildString {
                                 append("IN: $inTime")
-                                if (lunchOutTime != null) {
-                                    append(" • LUNCH: $lunchOutTime")
-                                    if (lunchInTime != null) append(" → $lunchInTime")
-                                }
                                 if (outTime != null) {
-                                    append(" • OUT: $outTime")
+                                    append(" • LATEST OUT: $outTime")
                                 }
                             }
                             Text("${emp?.employeeCode ?: ""} • $punchDetails", color = Color(0xFF94A3B8), fontSize = 11.sp)
@@ -282,7 +309,15 @@ fun HistoryView(records: List<AttendanceWithEmployee>, timeFormat: SimpleDateFor
 }
 
 @Composable
-fun EmployeeListView(employees: List<EmployeeEntity>, onDeactivate: (String) -> Unit) {
+fun EmployeeListView(
+    employees: List<EmployeeEntity>,
+    onDeactivate: (String) -> Unit,
+    onEditWage: (EmployeeEntity) -> Unit = {},
+    refreshKey: Int = 0
+) {
+    val context = LocalContext.current
+    val wagePrefs = remember { context.getSharedPreferences("poultry_wages", Context.MODE_PRIVATE) }
+
     if (employees.isEmpty()) {
         Box(
             modifier = Modifier
@@ -299,18 +334,38 @@ fun EmployeeListView(employees: List<EmployeeEntity>, onDeactivate: (String) -> 
                     text = "All demo data cleaned. Tap 'Register Face' above to enroll farm workers with face biometrics.",
                     color = Color(0xFF94A3B8),
                     fontSize = 12.sp,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = TextAlign.Center
                 )
             }
         }
     } else {
         LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(employees) { emp ->
+                val wage = remember(emp.id, refreshKey) { wagePrefs.getInt("wage_${emp.id}", 500) }
                 Surface(shape = RoundedCornerShape(10.dp), color = Color(0xFF131B2E), modifier = Modifier.fillMaxWidth()) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(emp.name, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                            Text("${emp.employeeCode} • ${if (emp.faceTemplateReference.isNotEmpty()) "Template Enrolled" else "No Template"}", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                            Text(emp.name, fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${emp.employeeCode} • ", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF0F2642),
+                                    modifier = Modifier.clickable { onEditWage(emp) }
+                                ) {
+                                    Text(
+                                        text = "₹$wage / day ✏️",
+                                        color = Color(0xFF38BDF8),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        IconButton(onClick = { onEditWage(emp) }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit Wage", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = { onDeactivate(emp.id) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
@@ -320,6 +375,467 @@ fun EmployeeListView(employees: List<EmployeeEntity>, onDeactivate: (String) -> 
             }
         }
     }
+}
+
+@Composable
+fun SalaryPayrollView(
+    employees: List<EmployeeEntity>,
+    todayRecords: List<AttendanceWithEmployee>,
+    allAttendance: List<AttendanceEntity>,
+    onEditWage: (EmployeeEntity) -> Unit,
+    refreshKey: Int = 0
+) {
+    val context = LocalContext.current
+    val wagePrefs = remember { context.getSharedPreferences("poultry_wages", Context.MODE_PRIVATE) }
+
+    // Month Navigation State
+    var calendarMonth by remember { mutableStateOf(Calendar.getInstance()) }
+    val monthFormat = remember { SimpleDateFormat("MMMM yyyy", Locale.getDefault()) }
+    val monthKeyFormat = remember { SimpleDateFormat("yyyy-MM", Locale.getDefault()) }
+    val selectedMonthLabel = remember(calendarMonth) { monthFormat.format(calendarMonth.time) }
+    val selectedMonthKey = remember(calendarMonth) { monthKeyFormat.format(calendarMonth.time) }
+
+    var localRefresh by remember { mutableStateOf(0) }
+
+    // Read wages and paid states
+    val wages = remember(employees, refreshKey, localRefresh) {
+        employees.associate { it.id to wagePrefs.getInt("wage_${it.id}", 500) }
+    }
+
+    val paidStatuses = remember(employees, selectedMonthKey, refreshKey, localRefresh) {
+        mutableStateMapOf<String, Boolean>().apply {
+            employees.forEach { emp ->
+                this[emp.id] = wagePrefs.getBoolean("paid_${emp.id}_$selectedMonthKey", false)
+            }
+        }
+    }
+
+    // Days present calculation per employee
+    val staffPayrollData = remember(employees, allAttendance, todayRecords, selectedMonthKey, wages) {
+        employees.map { emp ->
+            val dates = mutableSetOf<String>()
+            allAttendance.filter {
+                it.employeeId == emp.id && it.attendanceDate.startsWith(selectedMonthKey) && it.checkIn != null
+            }.forEach { dates.add(it.attendanceDate) }
+
+            todayRecords.filter {
+                it.attendance.employeeId == emp.id && it.attendance.attendanceDate.startsWith(selectedMonthKey) && it.attendance.checkIn != null
+            }.forEach { dates.add(it.attendance.attendanceDate) }
+
+            val daysPresent = dates.size
+            val wage = wages[emp.id] ?: 500
+            val salary = daysPresent * wage
+            Triple(emp, daysPresent, salary)
+        }
+    }
+
+    val totalMonthPayroll = staffPayrollData.sumOf { it.third }
+    val totalDaysWorked = staffPayrollData.sumOf { it.second }
+    val avgDailyWage = if (employees.isNotEmpty()) (wages.values.sum() / employees.size) else 500
+    val paidCount = staffPayrollData.count { paidStatuses[it.first.id] == true }
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Month Navigation Card
+        item {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF131B2E),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            val newCal = Calendar.getInstance().apply {
+                                time = calendarMonth.time
+                                add(Calendar.MONTH, -1)
+                            }
+                            calendarMonth = newCal
+                        }
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Previous Month", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("📅 ", fontSize = 15.sp)
+                        Text(
+                            text = selectedMonthLabel,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 15.sp
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            val newCal = Calendar.getInstance().apply {
+                                time = calendarMonth.time
+                                add(Calendar.MONTH, 1)
+                            }
+                            calendarMonth = newCal
+                        }
+                    ) {
+                        Icon(Icons.Default.ArrowForward, contentDescription = "Next Month", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
+                    }
+                }
+            }
+        }
+
+        // 4 KPI Summary Metric Boxes
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                MetricBox(
+                    title = "PAYROLL",
+                    count = "₹$totalMonthPayroll",
+                    color = Color(0xFF10B981),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricBox(
+                    title = "DAYS WORKED",
+                    count = "$totalDaysWorked",
+                    color = Color(0xFF38BDF8),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricBox(
+                    title = "AVG WAGE",
+                    count = "₹$avgDailyWage",
+                    color = Color(0xFFF59E0B),
+                    modifier = Modifier.weight(1f)
+                )
+                MetricBox(
+                    title = "PAID STATUS",
+                    count = "$paidCount/${employees.size}",
+                    color = if (paidCount == employees.size && employees.isNotEmpty()) Color(0xFF34D399) else Color(0xFFA78BFA),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        // Section Title & Formula Header
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Staff Salary Ledger",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = "Formula: Days Present × Daily Wage",
+                    color = Color(0xFF64748B),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        if (employees.isEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF131B2E),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(Icons.Default.People, contentDescription = null, tint = Color(0xFF64748B), modifier = Modifier.size(36.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("No Enrolled Staff", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                        Text("Enroll farm workers to calculate wages and track salaries.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    }
+                }
+            }
+        } else {
+            items(staffPayrollData) { (emp, daysPresent, salary) ->
+                val wage = wages[emp.id] ?: 500
+                val isPaid = paidStatuses[emp.id] ?: false
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF131B2E),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Left: Worker Info & Wage
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = emp.name,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        fontSize = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFF1E293B)
+                                    ) {
+                                        Text(
+                                            text = emp.employeeCode,
+                                            color = Color(0xFF94A3B8),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Clickable Wage Chip
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Color(0xFF0F2642),
+                                        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.5f)),
+                                        modifier = Modifier.clickable { onEditWage(emp) }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "₹$wage / day",
+                                                color = Color(0xFF38BDF8),
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Default.Edit,
+                                                contentDescription = "Edit Wage",
+                                                tint = Color(0xFF38BDF8),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    // Days Present Badge
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (daysPresent > 0) Color(0xFF064E3B) else Color(0xFF1E293B)
+                                    ) {
+                                        Text(
+                                            text = "$daysPresent Days Present",
+                                            color = if (daysPresent > 0) Color(0xFF34D399) else Color(0xFF94A3B8),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Right: Earned Salary & Paid Status Button
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = "EARNED SALARY",
+                                    fontSize = 9.sp,
+                                    color = Color(0xFF94A3B8),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "₹$salary",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color(0xFF10B981)
+                                )
+
+                                Spacer(modifier = Modifier.height(6.dp))
+
+                                Button(
+                                    onClick = {
+                                        val nextState = !isPaid
+                                        paidStatuses[emp.id] = nextState
+                                        wagePrefs.edit().putBoolean("paid_${emp.id}_$selectedMonthKey", nextState).apply()
+                                        localRefresh++
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isPaid) Color(0xFF065F46) else Color(0xFF78350F)
+                                    ),
+                                    shape = RoundedCornerShape(6.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isPaid) Icons.Default.CheckCircle else Icons.Default.Schedule,
+                                        contentDescription = null,
+                                        tint = if (isPaid) Color(0xFF6EE7B7) else Color(0xFFFDE68A),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isPaid) "PAID" else "PENDING",
+                                        color = if (isPaid) Color(0xFF6EE7B7) else Color(0xFFFDE68A),
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EditDailyWageDialog(
+    employee: EmployeeEntity,
+    currentWage: Int,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit
+) {
+    var wageInput by remember { mutableStateOf(currentWage.toString()) }
+    val presets = listOf(450, 500, 550, 600, 700, 800)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(
+                    text = "Edit Daily Wage Rate",
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    fontSize = 17.sp
+                )
+                Text(
+                    text = "${employee.name} (${employee.employeeCode})",
+                    color = Color(0xFF38BDF8),
+                    fontSize = 13.sp
+                )
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Configure daily wage rate for this farm worker. Earned salary is calculated as Days Present × Daily Wage.",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 12.sp
+                )
+
+                Text(
+                    text = "Quick Presets:",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    presets.take(3).forEach { p ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (wageInput == p.toString()) Color(0xFF10B981) else Color(0xFF1E293B),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { wageInput = p.toString() }
+                        ) {
+                            Text(
+                                text = "₹$p",
+                                color = if (wageInput == p.toString()) Color.Black else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    presets.drop(3).forEach { p ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (wageInput == p.toString()) Color(0xFF10B981) else Color(0xFF1E293B),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { wageInput = p.toString() }
+                        ) {
+                            Text(
+                                text = "₹$p",
+                                color = if (wageInput == p.toString()) Color.Black else Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = wageInput,
+                    onValueChange = { input ->
+                        if (input.all { it.isDigit() }) {
+                            wageInput = input
+                        }
+                    },
+                    label = { Text("Daily Wage Rate (₹)") },
+                    prefix = { Text("₹ ", color = Color(0xFF10B981), fontWeight = FontWeight.Bold) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF10B981),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    )
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val wageVal = wageInput.toIntOrNull()?.coerceAtLeast(100) ?: 500
+                    onSave(wageVal)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Save Wage", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = Color(0xFF94A3B8))
+            }
+        },
+        containerColor = Color(0xFF0F172A),
+        shape = RoundedCornerShape(16.dp)
+    )
 }
 
 @Composable

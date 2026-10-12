@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
                 val todayDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date()) }
                 val todayRecords by app.database.attendanceDao().getTodayAttendanceWithEmployeeFlow(todayDate).collectAsState(initial = emptyList())
                 val employeeList by app.database.employeeDao().getAllActiveEmployeesFlow().collectAsState(initial = emptyList())
+                val allAttendanceRecords by app.database.attendanceDao().getAllAttendanceFlow().collectAsState(initial = emptyList())
                 val pendingSyncCount by app.database.attendanceDao().getPendingSyncCountFlow().collectAsState(initial = 0)
 
                 if (!hasCameraPermission) {
@@ -130,6 +131,7 @@ class MainActivity : ComponentActivity() {
                         AdminDashboardScreen(
                             employees = employeeList,
                             todayRecords = todayRecords,
+                            allAttendance = allAttendanceRecords,
                             pendingSyncCount = pendingSyncCount,
                             otaUpdateManager = app.otaUpdateManager,
                             onBackToKiosk = {

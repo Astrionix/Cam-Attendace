@@ -49,20 +49,26 @@ class TtsSpeaker(context: Context) : TextToSpeech.OnInitListener {
         if (!isReady) return
         val text = if (isTelugu) {
             when (punchType) {
-                PunchType.MORNING_IN -> "నమస్కారం $name, మీ మార్నింగ్ ఎంట్రీ నమోదయింది"
-                PunchType.LUNCH_OUT -> "ధన్యవాదాలు $name, మీ లంచ్ బ్రేక్ ఎగ్జిట్ నమోదయింది"
-                PunchType.LUNCH_IN -> "స్వాగతం $name, మీ మధ్యాహ్నం ఎంట్రీ నమోదయింది"
-                PunchType.EVENING_OUT -> "ధన్యవాదాలు $name, మీ డ్యూటీ పూర్తయింది, ఎగ్జిట్ నమోదయింది"
+                PunchType.ENTRY, PunchType.MORNING_IN, PunchType.LUNCH_IN -> "నమస్కారం $name, మీ ఎంట్రీ నమోదయింది"
+                PunchType.EXIT, PunchType.LUNCH_OUT, PunchType.EVENING_OUT -> "ధన్యవాదాలు $name, మీ ఎగ్జిట్ నమోదయింది"
             }
         } else {
             when (punchType) {
-                PunchType.MORNING_IN -> "Namaskaram $name, morning entry recorded at $time"
-                PunchType.LUNCH_OUT -> "Dhanyavadalu $name, lunch exit recorded at $time"
-                PunchType.LUNCH_IN -> "Swagatham $name, afternoon entry recorded at $time"
-                PunchType.EVENING_OUT -> "Dhanyavadalu $name, evening exit recorded at $time"
+                PunchType.ENTRY, PunchType.MORNING_IN, PunchType.LUNCH_IN -> "Namaskaram $name, entry recorded at $time"
+                PunchType.EXIT, PunchType.LUNCH_OUT, PunchType.EVENING_OUT -> "Dhanyavadalu $name, exit recorded at $time"
             }
         }
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "punch")
+    }
+
+    fun speakCooldown(name: String, remainingMinutes: Int) {
+        if (!isReady) return
+        val text = if (isTelugu) {
+            "$name, ఇప్పటికే పంచ్ నమోదయింది. దయచేసి $remainingMinutes నిమిషాలు వేచి ఉండండి"
+        } else {
+            "$name, punch already recorded. Please wait $remainingMinutes minutes before next punch"
+        }
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "cooldown")
     }
 
     fun speakAlreadyPunched(name: String, punchType: PunchType, time: String) {
@@ -70,7 +76,7 @@ class TtsSpeaker(context: Context) : TextToSpeech.OnInitListener {
         val text = if (isTelugu) {
             "$name, మీ హాజరు ఇప్పటికే నమోదయింది"
         } else {
-            "$name, attendance already recorded for this shift at $time"
+            "$name, attendance already recorded at $time"
         }
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "already_punched")
     }
